@@ -110,6 +110,12 @@ sudo systemctl enable --now simple-health-checker.service
 sudo systemctl status simple-health-checker.service
 ```
 
+`git pull`後など、コードを更新した際はサービスの再起動が必要です。
+
+```bash
+sudo systemctl restart simple-health-checker.service
+```
+
 ## ログ
 
 標準出力へ出力されるため、systemd では `journalctl` で確認できます。
