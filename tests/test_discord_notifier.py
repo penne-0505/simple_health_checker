@@ -9,10 +9,10 @@ from simple_health_checker.notification.discord_notifier import DiscordNotifier
 
 class FakeChannel:
     def __init__(self) -> None:
-        self.messages: list[str] = []
+        self.messages: list[dict] = []
 
-    async def send(self, text: str) -> None:
-        self.messages.append(text)
+    async def send(self, content=None, embed=None) -> None:  # noqa: ANN001
+        self.messages.append({"content": content, "embed": embed})
 
 
 class FakeBot:
@@ -51,7 +51,8 @@ async def test_down_uses_alert_channel_and_mentions_role(monkeypatch: pytest.Mon
     await notifier.send_transition(monitor, MonitorStatus.UP, MonitorStatus.DOWN, state)
 
     assert len(alert_channel.messages) == 1
-    assert "<@&777>" in alert_channel.messages[0]
+    assert "<@&777>" in (alert_channel.messages[0]["content"] or "")
+    assert alert_channel.messages[0]["embed"] is not None
     assert len(notif_channel.messages) == 0
 
 
@@ -83,6 +84,6 @@ async def test_recovered_uses_notification_channel_without_mention(monkeypatch: 
     await notifier.send_transition(monitor, MonitorStatus.DOWN, MonitorStatus.UP, state)
 
     assert len(notif_channel.messages) == 1
-    assert "<@&777>" not in notif_channel.messages[0]
-    assert "RECOVERED" in notif_channel.messages[0]
+    assert "<@&777>" not in (notif_channel.messages[0]["content"] or "")
+    assert "RECOVERED" in notif_channel.messages[0]["embed"].description
     assert len(alert_channel.messages) == 0

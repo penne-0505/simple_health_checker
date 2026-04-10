@@ -42,6 +42,27 @@ def _monitor_to_text(monitor: Monitor) -> str:
     )
 
 
+def _build_embed(*, title: str, description: str, success: bool = True) -> discord.Embed:
+    color = discord.Color.green() if success else discord.Color.red()
+    return discord.Embed(title=title, description=description, color=color)
+
+
+async def _send_embed_response(
+    interaction: discord.Interaction,
+    *,
+    title: str,
+    description: str,
+    success: bool = True,
+    ephemeral: bool = True,
+    view: discord.ui.View | None = None,
+) -> None:
+    embed = _build_embed(title=title, description=description, success=success)
+    if interaction.response.is_done():
+        await interaction.followup.send(embed=embed, ephemeral=ephemeral, view=view)
+    else:
+        await interaction.response.send_message(embed=embed, ephemeral=ephemeral, view=view)
+
+
 class MonitorFormModal(discord.ui.Modal):
     def __init__(self, title: str, initial: Monitor | None = None):
         super().__init__(title=title, timeout=300)
@@ -103,7 +124,12 @@ class MonitorFormModal(discord.ui.Modal):
             self.submit_interaction = interaction
             await interaction.response.defer()
         except Exception as exc:
-            await interaction.response.send_message(f"入力が不正です: {exc}", ephemeral=True)
+            await _send_embed_response(
+                interaction,
+                title="入力エラー",
+                description=f"入力が不正です: `{exc}`",
+                success=False,
+            )
 
 
 class MonitorSelect(discord.ui.Select):
@@ -116,9 +142,9 @@ class MonitorSelect(discord.ui.Select):
         monitor_id = int(self.values[0])
         monitor = await self._repository.get_monitor(monitor_id)
         if not monitor:
-            await interaction.response.send_message("monitor が見つかりません。", ephemeral=True)
+            await _send_embed_response(interaction, title="monitor 未検出", description="monitor が見つかりません。", success=False)
             return
-        await interaction.response.send_message(_monitor_to_text(monitor), ephemeral=True)
+        await _send_embed_response(interaction, title="監視対象詳細", description=_monitor_to_text(monitor))
 
 
 class MonitorSelectView(discord.ui.View):
@@ -136,7 +162,7 @@ class MonitorDetailView(discord.ui.View):
     async def _require_admin(self, interaction: discord.Interaction) -> bool:
         if await self.app.has_manage_permission(interaction):
             return True
-        await interaction.response.send_message("この操作は管理者のみ実行できます。", ephemeral=True)
+        await _send_embed_response(interaction, title="権限エラー", description="この操作は管理者のみ実行できます。", success=False)
         return False
 
     @discord.ui.button(label="Pause", style=discord.ButtonStyle.secondary)
@@ -144,25 +170,26 @@ class MonitorDetailView(discord.ui.View):
         if not await self._require_admin(interaction):
             return
         await self.app.repository.set_monitor_enabled(self.monitor_id, False)
-        await interaction.response.send_message("監視を停止しました。", ephemeral=True)
+        await _send_embed_response(interaction, title="操作完了", description="監視を停止しました。")
 
     @discord.ui.button(label="Resume", style=discord.ButtonStyle.success)
     async def resume(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
         if not await self._require_admin(interaction):
             return
         await self.app.repository.set_monitor_enabled(self.monitor_id, True)
-        await interaction.response.send_message("監視を再開しました。", ephemeral=True)
+        await _send_embed_response(interaction, title="操作完了", description="監視を再開しました。")
 
     @discord.ui.button(label="Check Now", style=discord.ButtonStyle.primary)
     async def check_now(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
         monitor = await self.app.repository.get_monitor(self.monitor_id)
         if not monitor:
-            await interaction.response.send_message("monitor が見つかりません。", ephemeral=True)
+            await _send_embed_response(interaction, title="monitor 未検出", description="monitor が見つかりません。", success=False)
             return
         result, state = await self.app.monitor_service.run_single_check(monitor)
-        await interaction.response.send_message(
-            f"check完了 success={result.success}, code={result.status_code}, status={state.current_status.value}",
-            ephemeral=True,
+        await _send_embed_response(
+            interaction,
+            title="手動チェック結果",
+            description=f"check完了 success={result.success}, code={result.status_code}, status={state.current_status.value}",
         )
 
     @discord.ui.button(label="Delete", style=discord.ButtonStyle.danger)
@@ -170,7 +197,7 @@ class MonitorDetailView(discord.ui.View):
         if not await self._require_admin(interaction):
             return
         await self.app.repository.delete_monitor(self.monitor_id)
-        await interaction.response.send_message("削除しました。", ephemeral=True)
+        await _send_embed_response(interaction, title="操作完了", description="削除しました。")
 
 
 class HealthCheckerBot(discord.Client):
@@ -196,13 +223,13 @@ class HealthCheckerBot(discord.Client):
     async def _require_manage_permission(self, interaction: discord.Interaction) -> bool:
         if await self.has_manage_permission(interaction):
             return True
-        await interaction.response.send_message("この操作は管理権限ユーザーのみ実行できます。", ephemeral=True)
+        await _send_embed_response(interaction, title="権限エラー", description="この操作は管理権限ユーザーのみ実行できます。", success=False)
         return False
 
     async def _require_server_admin(self, interaction: discord.Interaction) -> bool:
         if self.is_server_admin(interaction):
             return True
-        await interaction.response.send_message("この操作はサーバー管理者のみ実行できます。", ephemeral=True)
+        await _send_embed_response(interaction, title="権限エラー", description="この操作はサーバー管理者のみ実行できます。", success=False)
         return False
 
     async def setup_hook(self) -> None:
@@ -231,21 +258,21 @@ class HealthCheckerBot(discord.Client):
         async def list_monitors(interaction: discord.Interaction) -> None:
             monitors = await self.repository.list_monitors()
             if not monitors:
-                await interaction.response.send_message("監視対象はまだありません。", ephemeral=True)
+                await _send_embed_response(interaction, title="監視対象一覧", description="監視対象はまだありません。")
                 return
             lines = [f"- `{m.id}` {m.name} ({'enabled' if m.enabled else 'disabled'})" for m in monitors]
             view = MonitorSelectView(monitors, self.repository)
-            await interaction.response.send_message("\n".join(lines), view=view, ephemeral=True)
+            await _send_embed_response(interaction, title="監視対象一覧", description="\n".join(lines), view=view)
 
         @group.command(name="detail", description="監視対象の詳細表示")
         @app_commands.describe(monitor_id="monitor id")
         async def detail(interaction: discord.Interaction, monitor_id: int) -> None:
             monitor = await self.repository.get_monitor(monitor_id)
             if not monitor:
-                await interaction.response.send_message("monitor が見つかりません。", ephemeral=True)
+                await _send_embed_response(interaction, title="monitor 未検出", description="monitor が見つかりません。", success=False)
                 return
             view = MonitorDetailView(self, monitor_id)
-            await interaction.response.send_message(_monitor_to_text(monitor), view=view, ephemeral=True)
+            await _send_embed_response(interaction, title="監視対象詳細", description=_monitor_to_text(monitor), view=view)
 
         @group.command(name="add", description="監視対象を追加")
         @app_commands.describe(
@@ -280,7 +307,7 @@ class HealthCheckerBot(discord.Client):
             )
             created = await self.repository.create_monitor(monitor)
             target = modal.submit_interaction or interaction
-            await target.followup.send(f"追加しました: `{created.id}` {created.name}", ephemeral=True)
+            await _send_embed_response(target, title="追加完了", description=f"追加しました: `{created.id}` {created.name}")
 
         @group.command(name="edit", description="監視対象を編集")
         @app_commands.describe(
@@ -304,7 +331,7 @@ class HealthCheckerBot(discord.Client):
                 return
             existing = await self.repository.get_monitor(monitor_id)
             if not existing:
-                await interaction.response.send_message("monitor が見つかりません。", ephemeral=True)
+                await _send_embed_response(interaction, title="monitor 未検出", description="monitor が見つかりません。", success=False)
                 return
             modal = MonitorFormModal("Edit monitor", initial=existing)
             await interaction.response.send_modal(modal)
@@ -322,49 +349,50 @@ class HealthCheckerBot(discord.Client):
             )
             updated = await self.repository.update_monitor(monitor)
             target = modal.submit_interaction or interaction
-            await target.followup.send(f"更新しました: `{updated.id}` {updated.name}", ephemeral=True)
+            await _send_embed_response(target, title="更新完了", description=f"更新しました: `{updated.id}` {updated.name}")
 
         @group.command(name="pause", description="一時停止")
         async def pause(interaction: discord.Interaction, monitor_id: int) -> None:
             if not await self._require_manage_permission(interaction):
                 return
             await self.repository.set_monitor_enabled(monitor_id, False)
-            await interaction.response.send_message("停止しました。", ephemeral=True)
+            await _send_embed_response(interaction, title="操作完了", description="停止しました。")
 
         @group.command(name="resume", description="再開")
         async def resume(interaction: discord.Interaction, monitor_id: int) -> None:
             if not await self._require_manage_permission(interaction):
                 return
             await self.repository.set_monitor_enabled(monitor_id, True)
-            await interaction.response.send_message("再開しました。", ephemeral=True)
+            await _send_embed_response(interaction, title="操作完了", description="再開しました。")
 
         @group.command(name="delete", description="削除")
         async def delete(interaction: discord.Interaction, monitor_id: int) -> None:
             if not await self._require_manage_permission(interaction):
                 return
             await self.repository.delete_monitor(monitor_id)
-            await interaction.response.send_message("削除しました。", ephemeral=True)
+            await _send_embed_response(interaction, title="操作完了", description="削除しました。")
 
         @group.command(name="check", description="手動チェック")
         async def check(interaction: discord.Interaction, monitor_id: int) -> None:
             monitor = await self.repository.get_monitor(monitor_id)
             if not monitor:
-                await interaction.response.send_message("monitor が見つかりません。", ephemeral=True)
+                await _send_embed_response(interaction, title="monitor 未検出", description="monitor が見つかりません。", success=False)
                 return
             result, state = await self.monitor_service.run_single_check(monitor)
-            await interaction.response.send_message(
-                (
+            await _send_embed_response(
+                interaction,
+                title="手動チェック結果",
+                description=(
                     f"manual check: success=`{result.success}` status_code=`{result.status_code}` "
                     f"current_state=`{state.current_status.value}`"
                 ),
-                ephemeral=True,
             )
 
         @group.command(name="history", description="直近履歴")
         async def history(interaction: discord.Interaction, monitor_id: int, limit: app_commands.Range[int, 1, 30] = 10) -> None:
             logs = await self.repository.list_recent_events(monitor_id, limit=limit)
             if not logs:
-                await interaction.response.send_message("履歴はありません。", ephemeral=True)
+                await _send_embed_response(interaction, title="履歴", description="履歴はありません。")
                 return
             lines = [
                 (
@@ -373,14 +401,14 @@ class HealthCheckerBot(discord.Client):
                 )
                 for log in logs
             ]
-            await interaction.response.send_message("\n".join(lines), ephemeral=True)
+            await _send_embed_response(interaction, title="直近履歴", description="\n".join(lines))
 
         @group.command(name="summary_now", description="定時サマリーを即時送信")
         async def summary_now(interaction: discord.Interaction) -> None:
             if not await self._require_manage_permission(interaction):
                 return
             await self.monitor_service.send_summary_once()
-            await interaction.response.send_message("サマリー送信を実行しました。", ephemeral=True)
+            await _send_embed_response(interaction, title="操作完了", description="サマリー送信を実行しました。")
 
         @auth_group.command(name="grant", description="管理操作権限を付与")
         @app_commands.describe(user="権限を付与するユーザー")
@@ -388,13 +416,10 @@ class HealthCheckerBot(discord.Client):
             if not await self._require_server_admin(interaction):
                 return
             if user.bot:
-                await interaction.response.send_message("bot アカウントには付与できません。", ephemeral=True)
+                await _send_embed_response(interaction, title="入力エラー", description="bot アカウントには付与できません。", success=False)
                 return
             await self.repository.grant_acl_admin(user.id, interaction.user.id)
-            await interaction.response.send_message(
-                f"管理操作権限を付与しました: <@{user.id}>",
-                ephemeral=True,
-            )
+            await _send_embed_response(interaction, title="権限付与", description=f"管理操作権限を付与しました: <@{user.id}>")
 
         @auth_group.command(name="revoke", description="管理操作権限を削除")
         @app_commands.describe(user="権限を削除するユーザー")
@@ -402,23 +427,22 @@ class HealthCheckerBot(discord.Client):
             if not await self._require_server_admin(interaction):
                 return
             if not await self.repository.is_acl_admin(user.id):
-                await interaction.response.send_message("対象ユーザーは ACL 管理者ではありません。", ephemeral=True)
+                await _send_embed_response(interaction, title="対象外", description="対象ユーザーは ACL 管理者ではありません。", success=False)
                 return
             count = await self.repository.count_acl_admins()
             if count <= 1:
-                await interaction.response.send_message(
-                    "最後の ACL 管理者は削除できません。先に別ユーザーへ付与してください。",
-                    ephemeral=True,
+                await _send_embed_response(
+                    interaction,
+                    title="操作不可",
+                    description="最後の ACL 管理者は削除できません。先に別ユーザーへ付与してください。",
+                    success=False,
                 )
                 return
             deleted = await self.repository.revoke_acl_admin(user.id, interaction.user.id)
             if not deleted:
-                await interaction.response.send_message("削除対象が見つかりませんでした。", ephemeral=True)
+                await _send_embed_response(interaction, title="未検出", description="削除対象が見つかりませんでした。", success=False)
                 return
-            await interaction.response.send_message(
-                f"管理操作権限を削除しました: <@{user.id}>",
-                ephemeral=True,
-            )
+            await _send_embed_response(interaction, title="権限削除", description=f"管理操作権限を削除しました: <@{user.id}>")
 
         @auth_group.command(name="list", description="管理操作権限ユーザー一覧")
         async def auth_list(interaction: discord.Interaction) -> None:
@@ -427,7 +451,7 @@ class HealthCheckerBot(discord.Client):
             user_ids = await self.repository.list_acl_admins()
             acl_lines = [f"- <@{user_id}> (`{user_id}`)" for user_id in user_ids] if user_ids else ["- (none)"]
             text = "## 管理操作権限一覧 (ACL)\n" + "\n".join(acl_lines)
-            await interaction.response.send_message(text, ephemeral=True)
+            await _send_embed_response(interaction, title="管理操作権限一覧 (ACL)", description=text)
 
         self.tree.add_command(group)
         self.tree.add_command(auth_group)

@@ -36,14 +36,16 @@ class DiscordNotifier:
                 mention_target = f"<@{monitor.mention_user_id}> "
 
         title = "RECOVERED" if previous == MonitorStatus.DOWN and current == MonitorStatus.UP else current.value
-        text = (
-            f"{mention_target}**{monitor.name}** 状態変化: `{previous.value}` -> `{title}`\n"
-            f"- last_error: `{state.last_error or '-'}`\n"
-            f"- latency_ms: `{state.last_latency_ms if state.last_latency_ms is not None else '-'}`\n"
-            f"- consecutive_failures: `{state.consecutive_failures}`\n"
-            f"- consecutive_successes: `{state.consecutive_successes}`"
+        embed = discord.Embed(
+            title=f"{monitor.name} 状態変化",
+            description=f"`{previous.value}` -> `{title}`",
+            color=discord.Color.red() if current == MonitorStatus.DOWN else discord.Color.green(),
         )
-        await channel.send(text)
+        embed.add_field(name="last_error", value=f"`{state.last_error or '-'}`", inline=False)
+        embed.add_field(name="latency_ms", value=f"`{state.last_latency_ms if state.last_latency_ms is not None else '-'}`", inline=True)
+        embed.add_field(name="consecutive_failures", value=f"`{state.consecutive_failures}`", inline=True)
+        embed.add_field(name="consecutive_successes", value=f"`{state.consecutive_successes}`", inline=True)
+        await channel.send(content=mention_target.strip() or None, embed=embed)
 
     async def send_summary(
         self,
@@ -58,10 +60,11 @@ class DiscordNotifier:
             logger.warning("summary channel not found: %s", channel_id)
             return
         down_text = ", ".join(down_monitors) if down_monitors else "なし"
-        message = (
-            "## Health Check Summary\n"
-            f"- total monitors: `{total}`\n"
-            f"- enabled monitors: `{enabled}`\n"
-            f"- down monitors: {down_text}"
+        embed = discord.Embed(
+            title="Health Check Summary",
+            color=discord.Color.blue(),
         )
-        await channel.send(message)
+        embed.add_field(name="total monitors", value=f"`{total}`", inline=True)
+        embed.add_field(name="enabled monitors", value=f"`{enabled}`", inline=True)
+        embed.add_field(name="down monitors", value=down_text, inline=False)
+        await channel.send(embed=embed)
