@@ -1,0 +1,19 @@
+[Unit]
+Description=Simple Health Checker Discord Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=YOUR_USER
+Group=YOUR_GROUP
+WorkingDirectory=/opt/simple_health_checker
+EnvironmentFile=/opt/simple_health_checker/.env
+ExecStart=/opt/simple_health_checker/.venv/bin/python -m simple_health_checker.app
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

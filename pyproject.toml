@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "simple-health-checker"
+version = "0.1.0"
+description = "Discord bot based lightweight health checker"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "discord.py>=2.4.0",
+  "aiohttp>=3.9.5",
+  "aiosqlite>=0.20.0",
+  "python-dotenv>=1.0.1",
+]
+
+[project.scripts]
+simple-health-checker = "simple_health_checker.app:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "pytest-asyncio>=1.3.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

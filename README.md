@@ -1,76 +1,119 @@
-# Documentation Driven Development Template
+# Simple Health Checker (Discord Bot)
 
-> This README is available in English and Japanese. English speakers, please scroll down.
+Fedora Linux 上で常駐させることを想定した、Discord bot ベースの小規模監視システムです。  
+HTTP/HTTPS エンドポイントを定期チェックし、状態遷移時のみ Discord に通知します。
 
-## 概要
+## 機能
 
-このリポジトリは私が常用しているドキュメント駆動開発 *(Documentation Driven Development)* のテンプレートです。
+- 単一の Discord bot で通知と管理を統合
+- 監視コアと Discord UI を分離した構成
+- SQLite を正本とした永続化
+- 複数監視対象を登録可能
+- 閾値ベースの状態遷移（単発失敗で即 DOWN にならない）
+- 状態変化時のみ通知（DOWN / RECOVERED）
+- DOWN 時のみメンション
+- 定時サマリー通知
+- slash command / button / select menu / modal による管理
 
-開発サイクルはドキュメントと [TODO.md](TODO.md) によって構成されています。
+## ディレクトリ構成
 
-人がサイクルを回すことも出来ますが、基本的には**Claude Codeなどのコーディングエージェント**が、この規則に従って自律的な開発を行うために設計されました。
+```text
+src/simple_health_checker/
+  app.py                    # エントリポイント
+  config.py                 # .env 設定ロード
+  models.py                 # ドメインモデル
+  repository/
+    base.py                 # Repository 抽象
+    sqlite.py               # SQLite 実装
+  monitoring/
+    http_checker.py         # HTTP チェック実行
+    service.py              # スケジューラ/状態遷移/サマリー
+  notification/
+    discord_notifier.py     # Discord 通知
+  discord_ui/
+    bot.py                  # Slash command / UI コンポーネント
 
-**詳細については [ガイドライン](_docs/documentation_guide.md) を参照してください。**
+deploy/systemd/simple-health-checker.service
+```
 
-## 使用方法
+## セットアップ
 
-1. このリポジトリをフォークまたはクローンします。
-2. プロジェクトに合わせてドキュメントと設定ファイルを編集します。
-3. 開発を開始します。
+1. Python 3.11+ と `uv` を用意
+2. 仮想環境作成と依存インストール
 
-### カスタマイズ
+```bash
+uv sync
+```
 
-使用に当たっては、以下のファイルをプロジェクトに合わせてカスタマイズしてください。
+3. `.env.example` を `.env` にコピーして値を設定
 
-#### AGENTS.md
+```bash
+cp .env.example .env
+```
 
-変更の推奨事項はありませんが、特定コマンドの使用指示が含まれているので、必要に応じて編集してください。
+4. 起動
 
-#### README.md
+```bash
+uv run python -m simple_health_checker.app
+```
 
-このREADME自体も、プロジェクトに合わせて編集してください。
+## 環境変数
 
-#### LICENSE.txt
+最低限 `DISCORD_BOT_TOKEN` が必要です。主な設定は以下です。
 
-[LICENSE](LICENSE.txt)についても、特に著作者の表示を編集してください。
+- `SQLITE_PATH`: SQLite ファイルパス
+- `POLL_LOOP_SECONDS`: ポーリング周期
+- `MAX_PARALLEL_CHECKS`: 並列チェック数
+- `SUMMARY_CHANNEL_ID`: サマリー通知先チャンネル ID
+- `SUMMARY_INTERVAL_SECONDS`: サマリー送信間隔
 
-## ライセンス
+## Slash Commands
 
-このリポジトリは [MITライセンス](LICENSE.txt) の下でライセンスされています。
+- `/monitor list` 監視対象一覧 + select menu
+- `/monitor detail` 詳細表示 + button 操作
+- `/monitor add` 追加（modal 使用）
+- `/monitor edit` 編集（modal 使用）
+- `/monitor pause` 停止
+- `/monitor resume` 再開
+- `/monitor delete` 削除
+- `/monitor check` 手動チェック
+- `/monitor history` 直近履歴表示
+- `/monitor summary_now` サマリー即時送信
 
----
+管理権限が必要な操作（追加・編集・削除・停止・再開・summary_now）は、
+「サーバー管理者」または `ACL` 登録ユーザーに制限されます。
 
-## Summary
+### 管理権限 (ACL) コマンド
 
-This repository is a template for Documentation Driven Development that I commonly use.
+- `/auth grant user:<member>` 管理操作権限を付与（サーバー管理者のみ）
+- `/auth revoke user:<member>` 管理操作権限を削除（サーバー管理者のみ）
+- `/auth list` ACL 一覧表示（管理操作権限ユーザーのみ）
 
-The development cycle is structured around documentation and [TODO.md](TODO.md).
+> 安全策として、最後の ACL 管理者は削除できません。
 
-While humans can run the cycle, it is primarily designed **for coding agents like Claude Code** to autonomously develop according to these rules.
+## 監視状態と通知仕様
 
-**For more details, please refer to the [Guidelines](_docs/documentation_guide.md).**
+- `failure_threshold` 到達で `DOWN`
+- `recovery_threshold` 到達で `UP`（DOWN からの復帰時は RECOVERED として通知）
+- 状態変化時のみ通知
+- DOWN 通知のみメンション送信
+- RECOVERED 通知は状態復帰時に 1 回のみ
 
-## Usage
+## systemd サービス化 (Fedora)
 
-1. Fork or clone this repository.
-2. Edit the documentation and configuration files to suit your project.
-3. Start development.
+`deploy/systemd/simple-health-checker.service` を必要に応じて編集して配置します。
 
-### Customization
+```bash
+sudo cp deploy/systemd/simple-health-checker.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now simple-health-checker.service
+sudo systemctl status simple-health-checker.service
+```
 
-When using this template, please customize the following files to fit your project.
+## ログ
 
-#### AGENTS.md
+標準出力へ出力されるため、systemd では `journalctl` で確認できます。
 
-No specific changes are recommended here, but feel free to edit it as needed, especially if you want to suggest the use of certain commands.
-
-#### README.md
-
-Feel free to edit this README itself to suit your project.
-
-#### LICENSE.txt
-
-Please edit the [LICENSE](LICENSE.txt) file, particularly the author attribution.
-
-## License
-This repository is licensed under the [MIT License](LICENSE.txt).
+```bash
+journalctl -u simple-health-checker.service -f
+```
