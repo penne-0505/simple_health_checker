@@ -47,6 +47,12 @@ def _build_embed(*, title: str, description: str, success: bool = True) -> disco
     return discord.Embed(title=title, description=description, color=color)
 
 
+async def _defer_response(interaction: discord.Interaction, *, ephemeral: bool = True) -> None:
+    if interaction.response.is_done():
+        return
+    await interaction.response.defer(ephemeral=ephemeral, thinking=True)
+
+
 async def _send_embed_response(
     interaction: discord.Interaction,
     *,
@@ -169,22 +175,28 @@ class MonitorDetailView(discord.ui.View):
     async def pause(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
         if not await self._require_admin(interaction):
             return
+        monitor = await self.app.get_monitor_or_respond(interaction, self.monitor_id)
+        if monitor is None:
+            return
         await self.app.repository.set_monitor_enabled(self.monitor_id, False)
-        await _send_embed_response(interaction, title="操作完了", description="監視を停止しました。")
+        await _send_embed_response(interaction, title="操作完了", description=f"監視を停止しました: `{monitor.id}` {monitor.name}")
 
     @discord.ui.button(label="Resume", style=discord.ButtonStyle.success)
     async def resume(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
         if not await self._require_admin(interaction):
             return
+        monitor = await self.app.get_monitor_or_respond(interaction, self.monitor_id)
+        if monitor is None:
+            return
         await self.app.repository.set_monitor_enabled(self.monitor_id, True)
-        await _send_embed_response(interaction, title="操作完了", description="監視を再開しました。")
+        await _send_embed_response(interaction, title="操作完了", description=f"監視を再開しました: `{monitor.id}` {monitor.name}")
 
     @discord.ui.button(label="Check Now", style=discord.ButtonStyle.primary)
     async def check_now(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
-        monitor = await self.app.repository.get_monitor(self.monitor_id)
-        if not monitor:
-            await _send_embed_response(interaction, title="monitor 未検出", description="monitor が見つかりません。", success=False)
+        monitor = await self.app.get_monitor_or_respond(interaction, self.monitor_id)
+        if monitor is None:
             return
+        await _defer_response(interaction)
         result, state = await self.app.monitor_service.run_single_check(monitor)
         await _send_embed_response(
             interaction,
@@ -196,8 +208,12 @@ class MonitorDetailView(discord.ui.View):
     async def delete(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
         if not await self._require_admin(interaction):
             return
+        monitor = await self.app.get_monitor_or_respond(interaction, self.monitor_id)
+        if monitor is None:
+            return
         await self.app.repository.delete_monitor(self.monitor_id)
-        await _send_embed_response(interaction, title="操作完了", description="削除しました。")
+        self.stop()
+        await _send_embed_response(interaction, title="操作完了", description=f"削除しました: `{monitor.id}` {monitor.name}")
 
 
 class HealthCheckerBot(discord.Client):
@@ -231,6 +247,13 @@ class HealthCheckerBot(discord.Client):
             return True
         await _send_embed_response(interaction, title="権限エラー", description="この操作はサーバー管理者のみ実行できます。", success=False)
         return False
+
+    async def get_monitor_or_respond(self, interaction: discord.Interaction, monitor_id: int) -> Monitor | None:
+        monitor = await self.repository.get_monitor(monitor_id)
+        if monitor is not None:
+            return monitor
+        await _send_embed_response(interaction, title="monitor 未検出", description="monitor が見つかりません。", success=False)
+        return None
 
     async def setup_hook(self) -> None:
         if self.config.command_guild_id:
@@ -267,9 +290,8 @@ class HealthCheckerBot(discord.Client):
         @group.command(name="detail", description="監視対象の詳細表示")
         @app_commands.describe(monitor_id="monitor id")
         async def detail(interaction: discord.Interaction, monitor_id: int) -> None:
-            monitor = await self.repository.get_monitor(monitor_id)
-            if not monitor:
-                await _send_embed_response(interaction, title="monitor 未検出", description="monitor が見つかりません。", success=False)
+            monitor = await self.get_monitor_or_respond(interaction, monitor_id)
+            if monitor is None:
                 return
             view = MonitorDetailView(self, monitor_id)
             await _send_embed_response(interaction, title="監視対象詳細", description=_monitor_to_text(monitor), view=view)
@@ -355,29 +377,38 @@ class HealthCheckerBot(discord.Client):
         async def pause(interaction: discord.Interaction, monitor_id: int) -> None:
             if not await self._require_manage_permission(interaction):
                 return
+            monitor = await self.get_monitor_or_respond(interaction, monitor_id)
+            if monitor is None:
+                return
             await self.repository.set_monitor_enabled(monitor_id, False)
-            await _send_embed_response(interaction, title="操作完了", description="停止しました。")
+            await _send_embed_response(interaction, title="操作完了", description=f"停止しました: `{monitor.id}` {monitor.name}")
 
         @group.command(name="resume", description="再開")
         async def resume(interaction: discord.Interaction, monitor_id: int) -> None:
             if not await self._require_manage_permission(interaction):
                 return
+            monitor = await self.get_monitor_or_respond(interaction, monitor_id)
+            if monitor is None:
+                return
             await self.repository.set_monitor_enabled(monitor_id, True)
-            await _send_embed_response(interaction, title="操作完了", description="再開しました。")
+            await _send_embed_response(interaction, title="操作完了", description=f"再開しました: `{monitor.id}` {monitor.name}")
 
         @group.command(name="delete", description="削除")
         async def delete(interaction: discord.Interaction, monitor_id: int) -> None:
             if not await self._require_manage_permission(interaction):
                 return
+            monitor = await self.get_monitor_or_respond(interaction, monitor_id)
+            if monitor is None:
+                return
             await self.repository.delete_monitor(monitor_id)
-            await _send_embed_response(interaction, title="操作完了", description="削除しました。")
+            await _send_embed_response(interaction, title="操作完了", description=f"削除しました: `{monitor.id}` {monitor.name}")
 
         @group.command(name="check", description="手動チェック")
         async def check(interaction: discord.Interaction, monitor_id: int) -> None:
-            monitor = await self.repository.get_monitor(monitor_id)
-            if not monitor:
-                await _send_embed_response(interaction, title="monitor 未検出", description="monitor が見つかりません。", success=False)
+            monitor = await self.get_monitor_or_respond(interaction, monitor_id)
+            if monitor is None:
                 return
+            await _defer_response(interaction)
             result, state = await self.monitor_service.run_single_check(monitor)
             await _send_embed_response(
                 interaction,
@@ -390,9 +421,12 @@ class HealthCheckerBot(discord.Client):
 
         @group.command(name="history", description="直近履歴")
         async def history(interaction: discord.Interaction, monitor_id: int, limit: app_commands.Range[int, 1, 30] = 10) -> None:
+            monitor = await self.get_monitor_or_respond(interaction, monitor_id)
+            if monitor is None:
+                return
             logs = await self.repository.list_recent_events(monitor_id, limit=limit)
             if not logs:
-                await _send_embed_response(interaction, title="履歴", description="履歴はありません。")
+                await _send_embed_response(interaction, title="履歴", description=f"`{monitor.id}` {monitor.name} の履歴はありません。")
                 return
             lines = [
                 (
@@ -407,6 +441,7 @@ class HealthCheckerBot(discord.Client):
         async def summary_now(interaction: discord.Interaction) -> None:
             if not await self._require_manage_permission(interaction):
                 return
+            await _defer_response(interaction)
             await self.monitor_service.send_summary_once()
             await _send_embed_response(interaction, title="操作完了", description="サマリー送信を実行しました。")
 

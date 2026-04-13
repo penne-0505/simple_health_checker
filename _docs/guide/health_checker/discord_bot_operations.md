@@ -37,13 +37,15 @@ related_prs: []
 - `recovery_threshold` を 2 以上にして瞬間復旧での誤通知を抑制する。
 - サーバー管理者が `/auth grant` で ACL 管理者を付与し、日常運用を委譲する。
 - 定時監視の俯瞰のため `SUMMARY_CHANNEL_ID` を設定する。
+- `/monitor check` や `/monitor summary_now` は Discord 側で応答待ち表示が出るため、完了メッセージが follow-up として返るまで待つ。
 - 長期運用では SQLite の lock/reconnect ログを定期確認する（`journalctl` 推奨）。
 - Discord Bot 側の `/healthz` は、正常時 `200`・異常時 `503` を返す専用エンドポイントとして設計する。
 
 ## Troubleshooting
 - slash command が出ない: `COMMAND_GUILD_ID` を設定してギルド同期を確認する。
-- 通知が飛ばない: チャンネルIDの設定と bot の送信権限を確認する。
+- 通知が飛ばない: チャンネルIDの設定と bot の送信権限を確認する。再起動直後でも channel cache に依存せず送信する実装だが、権限不足時は送信できない。
 - DOWN/UP 遷移しない: `failure_threshold` / `recovery_threshold` が高すぎないか確認する。
+- `/monitor pause` / `/monitor resume` / `/monitor delete` が失敗する: 対象 monitor が削除済みでないか、ID を取り違えていないか確認する。
 - 起動失敗: `DISCORD_BOT_TOKEN` と `SQLITE_PATH` の設定、依存インストール状況を確認する。
 - `database is locked` が出る: 一時的な負荷集中の可能性があるため、`MAX_PARALLEL_CHECKS` を下げ、継続する場合はイベントログ量を見直す。
 

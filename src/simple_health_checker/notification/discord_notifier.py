@@ -13,6 +13,28 @@ class DiscordNotifier:
     def __init__(self, bot: discord.Client):
         self._bot = bot
 
+    async def _resolve_channel(self, channel_id: int) -> discord.abc.Messageable | None:
+        channel = self._bot.get_channel(channel_id)
+        if isinstance(channel, discord.abc.Messageable):
+            return channel
+
+        try:
+            fetched_channel = await self._bot.fetch_channel(channel_id)
+        except discord.NotFound:
+            logger.warning("notification channel not found: %s", channel_id)
+            return None
+        except discord.Forbidden:
+            logger.warning("notification channel access denied: %s", channel_id)
+            return None
+        except discord.HTTPException:
+            logger.exception("notification channel fetch failed: %s", channel_id)
+            return None
+
+        if not isinstance(fetched_channel, discord.abc.Messageable):
+            logger.warning("notification target is not messageable: %s", channel_id)
+            return None
+        return fetched_channel
+
     async def send_transition(
         self,
         monitor: Monitor,
@@ -23,8 +45,8 @@ class DiscordNotifier:
         if current == previous:
             return
         target_channel_id = monitor.alert_channel_id if current == MonitorStatus.DOWN and monitor.alert_channel_id else monitor.notification_channel_id
-        channel = self._bot.get_channel(target_channel_id)
-        if not isinstance(channel, discord.abc.Messageable):
+        channel = await self._resolve_channel(target_channel_id)
+        if channel is None:
             logger.warning("notification channel not found for monitor=%s", monitor.name)
             return
 
@@ -55,8 +77,8 @@ class DiscordNotifier:
         enabled: int,
         down_monitors: list[str],
     ) -> None:
-        channel = self._bot.get_channel(channel_id)
-        if not isinstance(channel, discord.abc.Messageable):
+        channel = await self._resolve_channel(channel_id)
+        if channel is None:
             logger.warning("summary channel not found: %s", channel_id)
             return
         down_text = ", ".join(down_monitors) if down_monitors else "なし"

@@ -16,11 +16,20 @@ class FakeChannel:
 
 
 class FakeBot:
-    def __init__(self, channels: dict[int, FakeChannel]) -> None:
+    def __init__(self, channels: dict[int, FakeChannel], fetched_channels: dict[int, FakeChannel] | None = None) -> None:
         self._channels = channels
+        self._fetched_channels = fetched_channels or {}
+        self.fetch_calls: list[int] = []
 
     def get_channel(self, channel_id: int):
         return self._channels.get(channel_id)
+
+    async def fetch_channel(self, channel_id: int):
+        self.fetch_calls.append(channel_id)
+        channel = self._fetched_channels.get(channel_id)
+        if channel is None:
+            raise discord_notifier.discord.NotFound(response=None, message="not found")  # type: ignore[arg-type]
+        return channel
 
 
 @pytest.mark.asyncio
@@ -87,3 +96,33 @@ async def test_recovered_uses_notification_channel_without_mention(monkeypatch: 
     assert "<@&777>" not in (notif_channel.messages[0]["content"] or "")
     assert "RECOVERED" in notif_channel.messages[0]["embed"].description
     assert len(alert_channel.messages) == 0
+
+
+@pytest.mark.asyncio
+async def test_cache_miss_fetches_channel_before_sending(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(discord_notifier.discord.abc, "Messageable", FakeChannel)
+    notif_channel = FakeChannel()
+    bot = FakeBot({}, fetched_channels={100: notif_channel})
+    notifier = DiscordNotifier(bot)  # type: ignore[arg-type]
+
+    monitor = Monitor(
+        id=1,
+        name="notifier-test",
+        url="https://example.com",
+        method="GET",
+        timeout_seconds=5,
+        expected_status_codes=[200],
+        interval_seconds=60,
+        failure_threshold=2,
+        recovery_threshold=2,
+        notification_channel_id=100,
+        alert_channel_id=None,
+        mention_role_id=None,
+        mention_user_id=None,
+        enabled=True,
+    )
+    state = MonitorState(monitor_id=1, current_status=MonitorStatus.UP, consecutive_successes=2)
+    await notifier.send_transition(monitor, MonitorStatus.DOWN, MonitorStatus.UP, state)
+
+    assert bot.fetch_calls == [100]
+    assert len(notif_channel.messages) == 1
