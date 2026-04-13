@@ -71,10 +71,13 @@ async def _send_prebuilt_embed_response(
     ephemeral: bool = True,
     view: discord.ui.View | None = None,
 ) -> None:
+    kwargs = {"embed": embed, "ephemeral": ephemeral}
+    if view is not None:
+        kwargs["view"] = view
     if interaction.response.is_done():
-        await interaction.followup.send(embed=embed, ephemeral=ephemeral, view=view)
+        await interaction.followup.send(**kwargs)
     else:
-        await interaction.response.send_message(embed=embed, ephemeral=ephemeral, view=view)
+        await interaction.response.send_message(**kwargs)
 
 
 async def _send_embed_response(
@@ -87,10 +90,13 @@ async def _send_embed_response(
     view: discord.ui.View | None = None,
 ) -> None:
     embed = _build_embed(title=title, description=description, success=success)
+    kwargs = {"embed": embed, "ephemeral": ephemeral}
+    if view is not None:
+        kwargs["view"] = view
     if interaction.response.is_done():
-        await interaction.followup.send(embed=embed, ephemeral=ephemeral, view=view)
+        await interaction.followup.send(**kwargs)
     else:
-        await interaction.response.send_message(embed=embed, ephemeral=ephemeral, view=view)
+        await interaction.response.send_message(**kwargs)
 
 
 class MonitorFormModal(discord.ui.Modal):
