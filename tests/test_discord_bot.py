@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from simple_health_checker.config import AppConfig
-from simple_health_checker.discord_ui.bot import HealthCheckerBot
+from simple_health_checker.discord_ui.bot import HealthCheckerBot, MonitorListView
 from simple_health_checker.models import CheckResult, Monitor, MonitorState, MonitorStatus
 
 
@@ -57,6 +57,9 @@ class RepositoryStub:
 
     async def set_monitor_enabled(self, monitor_id: int, enabled: bool) -> None:
         self.set_enabled_calls.append((monitor_id, enabled))
+
+    async def list_monitors(self) -> list[Monitor]:
+        return list(self.monitors.values())
 
 
 class MonitorServiceStub:
@@ -127,6 +130,10 @@ def _get_monitor_command(bot: HealthCheckerBot, name: str):
     raise AssertionError(f"command not found: {name}")
 
 
+def _make_monitors(count: int) -> list[Monitor]:
+    return [_monitor(idx, f"monitor-{idx:02d}") for idx in range(1, count + 1)]
+
+
 @pytest.mark.asyncio
 async def test_monitor_check_defers_before_running_health_check() -> None:
     repo = RepositoryStub(monitors={1: _monitor(1)})
@@ -162,3 +169,27 @@ async def test_monitor_pause_returns_not_found_without_mutation() -> None:
         assert interaction.response.messages[0]["embed"].title == "monitor 未検出"
     finally:
         await bot.close()
+
+
+def test_monitor_list_view_paginates_beyond_25_options() -> None:
+    monitors = _make_monitors(30)
+    repo = RepositoryStub(monitors={monitor.id or -1: monitor for monitor in monitors})
+    view = MonitorListView(monitors, repo)
+
+    assert view.page_count == 2
+    assert view.current_page == 0
+    assert len(view.select_menu.options) == 25
+    assert view.select_menu.options[0].label == "1: monitor-01"
+    assert view.select_menu.options[-1].label == "25: monitor-25"
+    assert view.previous_page.disabled is True
+    assert view.next_page.disabled is False
+
+    view.set_page(1)
+
+    assert view.current_page == 1
+    assert len(view.select_menu.options) == 5
+    assert view.select_menu.options[0].label == "26: monitor-26"
+    assert view.select_menu.options[-1].label == "30: monitor-30"
+    assert view.previous_page.disabled is False
+    assert view.next_page.disabled is True
+    assert view.build_embed().footer.text == "page 2/2 monitors 30"

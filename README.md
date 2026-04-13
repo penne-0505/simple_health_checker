@@ -69,7 +69,7 @@ uv run python -m simple_health_checker.app
 
 ## Slash Commands
 
-- `/monitor list` 監視対象一覧 + select menu
+- `/monitor list` 監視対象一覧 + paginated select menu
 - `/monitor detail` 詳細表示 + button 操作
 - `/monitor add` 追加（modal 使用）
 - `/monitor edit` 編集（modal 使用）

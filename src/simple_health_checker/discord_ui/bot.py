@@ -12,6 +12,7 @@ from simple_health_checker.monitoring.service import MonitorService
 from simple_health_checker.repository.base import MonitorRepository
 
 logger = logging.getLogger(__name__)
+MONITOR_LIST_PAGE_SIZE = 25
 
 
 def _parse_csv_ints(raw: str) -> list[int]:
@@ -47,10 +48,33 @@ def _build_embed(*, title: str, description: str, success: bool = True) -> disco
     return discord.Embed(title=title, description=description, color=color)
 
 
+def _build_monitor_list_embed(monitors: list[Monitor], *, current_page: int, page_size: int = MONITOR_LIST_PAGE_SIZE) -> discord.Embed:
+    total_pages = max(1, (len(monitors) + page_size - 1) // page_size)
+    start = current_page * page_size
+    page_monitors = monitors[start : start + page_size]
+    lines = [f"- `{m.id}` {m.name} ({'enabled' if m.enabled else 'disabled'})" for m in page_monitors]
+    embed = _build_embed(title="監視対象一覧", description="\n".join(lines))
+    embed.set_footer(text=f"page {current_page + 1}/{total_pages} monitors {len(monitors)}")
+    return embed
+
+
 async def _defer_response(interaction: discord.Interaction, *, ephemeral: bool = True) -> None:
     if interaction.response.is_done():
         return
     await interaction.response.defer(ephemeral=ephemeral, thinking=True)
+
+
+async def _send_prebuilt_embed_response(
+    interaction: discord.Interaction,
+    *,
+    embed: discord.Embed,
+    ephemeral: bool = True,
+    view: discord.ui.View | None = None,
+) -> None:
+    if interaction.response.is_done():
+        await interaction.followup.send(embed=embed, ephemeral=ephemeral, view=view)
+    else:
+        await interaction.response.send_message(embed=embed, ephemeral=ephemeral, view=view)
 
 
 async def _send_embed_response(
@@ -141,8 +165,12 @@ class MonitorFormModal(discord.ui.Modal):
 class MonitorSelect(discord.ui.Select):
     def __init__(self, monitors: list[Monitor], repository: MonitorRepository):
         self._repository = repository
-        options = [discord.SelectOption(label=f"{m.id}: {m.name}", value=str(m.id)) for m in monitors[:25] if m.id is not None]
+        options = [discord.SelectOption(label=f"{m.id}: {m.name}", value=str(m.id)) for m in monitors if m.id is not None]
         super().__init__(placeholder="監視対象を選択", min_values=1, max_values=1, options=options)
+
+    def update_monitors(self, monitors: list[Monitor]) -> None:
+        self.options = [discord.SelectOption(label=f"{m.id}: {m.name}", value=str(m.id)) for m in monitors if m.id is not None]
+        self.placeholder = "監視対象を選択"
 
     async def callback(self, interaction: discord.Interaction) -> None:
         monitor_id = int(self.values[0])
@@ -153,10 +181,46 @@ class MonitorSelect(discord.ui.Select):
         await _send_embed_response(interaction, title="監視対象詳細", description=_monitor_to_text(monitor))
 
 
-class MonitorSelectView(discord.ui.View):
-    def __init__(self, monitors: list[Monitor], repository: MonitorRepository):
+class MonitorListView(discord.ui.View):
+    def __init__(self, monitors: list[Monitor], repository: MonitorRepository, *, page_size: int = MONITOR_LIST_PAGE_SIZE):
         super().__init__(timeout=180)
-        self.add_item(MonitorSelect(monitors, repository))
+        self._monitors = monitors
+        self._page_size = page_size
+        self.current_page = 0
+        self.select_menu = MonitorSelect(self.current_page_monitors, repository)
+        self.add_item(self.select_menu)
+        self._sync_components()
+
+    @property
+    def page_count(self) -> int:
+        return max(1, (len(self._monitors) + self._page_size - 1) // self._page_size)
+
+    @property
+    def current_page_monitors(self) -> list[Monitor]:
+        start = self.current_page * self._page_size
+        return self._monitors[start : start + self._page_size]
+
+    def set_page(self, page: int) -> None:
+        self.current_page = max(0, min(page, self.page_count - 1))
+        self._sync_components()
+
+    def build_embed(self) -> discord.Embed:
+        return _build_monitor_list_embed(self._monitors, current_page=self.current_page, page_size=self._page_size)
+
+    def _sync_components(self) -> None:
+        self.select_menu.update_monitors(self.current_page_monitors)
+        self.previous_page.disabled = self.current_page <= 0
+        self.next_page.disabled = self.current_page >= self.page_count - 1
+
+    @discord.ui.button(label="Prev", style=discord.ButtonStyle.secondary)
+    async def previous_page(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
+        self.set_page(self.current_page - 1)
+        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+
+    @discord.ui.button(label="Next", style=discord.ButtonStyle.secondary)
+    async def next_page(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
+        self.set_page(self.current_page + 1)
+        await interaction.response.edit_message(embed=self.build_embed(), view=self)
 
 
 class MonitorDetailView(discord.ui.View):
@@ -283,9 +347,8 @@ class HealthCheckerBot(discord.Client):
             if not monitors:
                 await _send_embed_response(interaction, title="監視対象一覧", description="監視対象はまだありません。")
                 return
-            lines = [f"- `{m.id}` {m.name} ({'enabled' if m.enabled else 'disabled'})" for m in monitors]
-            view = MonitorSelectView(monitors, self.repository)
-            await _send_embed_response(interaction, title="監視対象一覧", description="\n".join(lines), view=view)
+            view = MonitorListView(monitors, self.repository)
+            await _send_prebuilt_embed_response(interaction, embed=view.build_embed(), view=view)
 
         @group.command(name="detail", description="監視対象の詳細表示")
         @app_commands.describe(monitor_id="monitor id")

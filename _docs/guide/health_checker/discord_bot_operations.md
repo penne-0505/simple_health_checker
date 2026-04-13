@@ -30,6 +30,7 @@ related_prs: []
 - 停止/再開: `/monitor pause`, `/monitor resume`
 - 手動チェック: `/monitor check`
 - 状態確認: `/monitor list`, `/monitor detail`, `/monitor history`
+  - `/monitor list` は 25 件ごとに `Prev` / `Next` でページ移動し、そのページ内の select menu から詳細を開く
 - ACL 管理: `/auth grant`, `/auth revoke`, `/auth list`
 
 ## Best Practices
