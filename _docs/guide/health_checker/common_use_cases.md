@@ -3,10 +3,11 @@ title: Common Health Check Use Cases
 status: active
 draft_status: n/a
 created_at: 2026-04-10
-updated_at: 2026-04-10
+updated_at: 2026-04-13
 references:
   - ../../reference/health_checker/architecture_and_commands.md
   - ./discord_bot_operations.md
+  - ./health_endpoint_response_examples.md
 related_issues: []
 related_prs: []
 ---
@@ -45,6 +46,7 @@ related_prs: []
 - **推奨前提**:
   - Bot 本体に HTTP ヘルスエンドポイント（例: `/healthz`）を公開しておく。
   - `200` 返却時のみ正常扱いにする。
+  - 本文は補助情報として JSON を返してよいが、正常/異常の判定は HTTP ステータスコードで表現する。
 - **推奨設定例**:
   - `name`: `my-discord-bot`
   - `url`: `https://bot.example.net/healthz`
@@ -61,6 +63,7 @@ related_prs: []
 - **運用ポイント**:
   - 非力マシンでは監視間隔を短くしすぎない（まず `30s` から）。
   - false positive が多い場合は `timeout_seconds` と `failure_threshold` を先に調整する。
+  - レスポンス例や推奨フィールドは `./health_endpoint_response_examples.md` を参照する。
 
 ## Best Practices
 - 本番導入前に `/monitor check` で手動実行し、通知メッセージとメンション先を確認する。
@@ -81,4 +84,5 @@ related_prs: []
 ## References
 - `README.md`
 - `./discord_bot_operations.md`
+- `./health_endpoint_response_examples.md`
 - `../../reference/health_checker/architecture_and_commands.md`

@@ -3,10 +3,11 @@ title: Discord Bot Operations Guide
 status: active
 draft_status: n/a
 created_at: 2026-04-10
-updated_at: 2026-04-10
+updated_at: 2026-04-13
 references:
   - ../../reference/health_checker/architecture_and_commands.md
   - ./common_use_cases.md
+  - ./health_endpoint_response_examples.md
 related_issues: []
 related_prs: []
 ---
@@ -37,6 +38,7 @@ related_prs: []
 - サーバー管理者が `/auth grant` で ACL 管理者を付与し、日常運用を委譲する。
 - 定時監視の俯瞰のため `SUMMARY_CHANNEL_ID` を設定する。
 - 長期運用では SQLite の lock/reconnect ログを定期確認する（`journalctl` 推奨）。
+- Discord Bot 側の `/healthz` は、正常時 `200`・異常時 `503` を返す専用エンドポイントとして設計する。
 
 ## Troubleshooting
 - slash command が出ない: `COMMAND_GUILD_ID` を設定してギルド同期を確認する。
@@ -48,5 +50,6 @@ related_prs: []
 ## References
 - `README.md`
 - `./common_use_cases.md`
+- `./health_endpoint_response_examples.md`
 - `../../reference/health_checker/architecture_and_commands.md`
 - `deploy/systemd/simple-health-checker.service`

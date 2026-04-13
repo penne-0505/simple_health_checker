@@ -3,10 +3,11 @@ title: Health Checker Architecture Reference
 status: active
 draft_status: n/a
 created_at: 2026-04-10
-updated_at: 2026-04-10
+updated_at: 2026-04-13
 references:
   - ../../guide/health_checker/discord_bot_operations.md
   - ../../guide/health_checker/common_use_cases.md
+  - ../../guide/health_checker/health_endpoint_response_examples.md
 related_issues: []
 related_prs: []
 ---
@@ -47,6 +48,8 @@ related_prs: []
 - **Examples**: `/monitor add`, `/monitor detail monitor_id:1`
 
 ## Notes
+- `HTTPChecker` はレスポンス本文を解析せず、HTTP ステータスコードが `expected_status_codes` に含まれるかどうかで成否を判定する。
+- そのため、監視対象のヘルスエンドポイントは正常/異常を本文ではなくステータスコードで表現する必要がある。
 - SQLite テーブル:
   - `monitors`: 監視対象定義
   - `monitor_state`: 現在状態と連続成功/失敗回数、最終通知関連情報
