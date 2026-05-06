@@ -408,6 +408,7 @@ class HealthCheckerBot(discord.Client):
             mention_role="DOWN時にメンションするロール",
             mention_user="DOWN時にメンションするユーザー",
             enabled="有効/無効",
+            interval_seconds="チェック間隔（秒）",
         )
         async def edit(
             interaction: discord.Interaction,
@@ -417,6 +418,7 @@ class HealthCheckerBot(discord.Client):
             mention_role: discord.Role | None = None,
             mention_user: discord.Member | None = None,
             enabled: bool | None = None,
+            interval_seconds: int | None = None,
         ) -> None:
             if not await self._require_manage_permission(interaction):
                 return
@@ -437,6 +439,7 @@ class HealthCheckerBot(discord.Client):
                 mention_role_id=mention_role.id if mention_role else existing.mention_role_id,
                 mention_user_id=mention_user.id if mention_user else existing.mention_user_id,
                 enabled=enabled if enabled is not None else existing.enabled,
+                interval_seconds=interval_seconds if interval_seconds is not None else modal.parsed_monitor.interval_seconds,
             )
             updated = await self.repository.update_monitor(monitor)
             target = modal.submit_interaction or interaction
